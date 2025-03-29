@@ -182,17 +182,18 @@ public class UnsolvedPuzzles extends GenericPuzzleActivity {
 
 	@Override
 	protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
+		super.onActivityResult(requestCode, resultCode, intent);
 		if (intent == null) return;
-		if (intent.hasExtra(Intents.PUZZLE_SOLVED)){
+		if (intent.hasExtra(Intents.PUZZLE_SOLVED)) {
 			int puzzleID = intent.getIntExtra(Intents.PUZZLE_SOLVED, 0);
-			
+
 			final Puzzle puzzle = refreshPuzzle(puzzleID);
 
 			checkAchievements();
-			
+
 			if (puzzleID < 0) return;
 			if (!pref.getBoolean(RoboZZleSettings.AUTO_SOLUTION_SUBMIT, true)) return;
-			
+
 			submitSolution(puzzle);
 		}
 		if (intent.hasExtra(Intents.PUZZLE_SCARY)) {
