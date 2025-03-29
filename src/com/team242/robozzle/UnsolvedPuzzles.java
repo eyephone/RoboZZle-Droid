@@ -9,7 +9,10 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences.Editor;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
+
+import androidx.annotation.RequiresApi;
 import androidx.appcompat.widget.SearchView;
 import androidx.appcompat.widget.Toolbar;
 import android.text.InputType;
@@ -73,7 +76,7 @@ public class UnsolvedPuzzles extends GenericPuzzleActivity {
 				adapter.createInitialPuzzles();
 
 			if (adapter.getCount() <= adapter.getTutorialCount()) {
-				adapter.updatePuzzles((LinearLayout)findViewById(R.id.syncPane), RobozzleWebClient.SortKind.POPULAR);
+				//adapter.updatePuzzles(this, (LinearLayout)findViewById(R.id.syncPane), RobozzleWebClient.SortKind.POPULAR);
 			}
 		} catch (SQLException e) {
 			// TODO: report exception
@@ -273,8 +276,16 @@ public class UnsolvedPuzzles extends GenericPuzzleActivity {
 	    update.setOnMenuItemClickListener(new OnMenuItemClickListener() {
 			@Override
 			public boolean onMenuItemClick(MenuItem item) {
-				updatePuzzles();
-				return true;
+				try {
+					if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+						updatePuzzles();
+					}
+				} catch (SQLException e) {
+					throw new RuntimeException(e);
+				} catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                return true;
 			}
 		});
 	    
@@ -416,18 +427,20 @@ public class UnsolvedPuzzles extends GenericPuzzleActivity {
 		adapter.shareSolutions();
 	}
 	
-	private void updatePuzzles() {
+	@RequiresApi(api = Build.VERSION_CODES.KITKAT)
+	private void updatePuzzles() throws SQLException, IOException {
 		if (adapter.isSynchronizing()){
 			Toast.makeText(this, R.string.alreadySynchronizing, Toast.LENGTH_SHORT).show();
 			return;
 		}
 		
 		View syncPane = findViewById(R.id.syncPane);
-		boolean hideUnpopular = pref.getBoolean(RoboZZleSettings.HIDE_UNPOPULAR, true);
-		RobozzleWebClient.SortKind sortKind = hideUnpopular
-				? RobozzleWebClient.SortKind.POPULAR
-				: RobozzleWebClient.SortKind.DESCENDING_ID;
-		adapter.updatePuzzles((LinearLayout)syncPane, sortKind);
+		RobozzleWebClient.SortKind sortKind = RobozzleWebClient.SortKind.POPULAR;
+//		boolean hideUnpopular = pref.getBoolean(RoboZZleSettings.HIDE_UNPOPULAR, true);
+//		RobozzleWebClient.SortKind sortKind = hideUnpopular
+//				? RobozzleWebClient.SortKind.POPULAR
+//				: RobozzleWebClient.SortKind.DESCENDING_ID;
+		adapter.updatePuzzles(this,(LinearLayout)syncPane, sortKind);
 	}
 
 	private void openCustomPuzzle(){

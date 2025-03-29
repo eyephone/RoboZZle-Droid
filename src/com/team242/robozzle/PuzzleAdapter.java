@@ -3,28 +3,40 @@
  */
 package com.team242.robozzle;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.util.Log;
+import android.util.Xml;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.*;
+
+import androidx.annotation.RequiresApi;
+
 import com.j256.ormlite.dao.Dao;
 import com.j256.ormlite.stmt.QueryBuilder;
 import com.j256.ormlite.stmt.Where;
 import com.team242.robozzle.RobozzleWebClient.LevelVoteInfo;
 import com.team242.robozzle.model.Puzzle;
 import com.team242.robozzle.service.OperationNotSupportedByClientException;
+
+import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.List;
@@ -440,11 +452,12 @@ public class PuzzleAdapter extends BaseAdapter {
 		return synchronizer != null;
 	}
 
-	public void updatePuzzles(LinearLayout statusPane, RobozzleWebClient.SortKind sortKind) {
-		Toast.makeText(parent, R.string.syncStarted, Toast.LENGTH_LONG).show();
-		statusPane.setVisibility(View.VISIBLE);
-		createUpdatePuzzlesTask(statusPane, sortKind);
-		synchronizer.execute();
+	@RequiresApi(api = Build.VERSION_CODES.KITKAT)
+	public void updatePuzzles(Context context, LinearLayout statusPane, RobozzleWebClient.SortKind sortKind) throws SQLException, IOException {
+		List<Puzzle> puzzleList = parsePuzzlesFromAssets(context, "levels.xml");
+		for (Puzzle p: puzzleList) {
+			puzzlesDAO.create(p);
+		}
 	}
 	
 	public void shareSolutions(){
@@ -541,4 +554,136 @@ public class PuzzleAdapter extends BaseAdapter {
 		
 		notifyDataSetChanged();
 	}
+
+
+	@SuppressLint("NewApi")
+	public static List<Puzzle> parsePuzzlesFromAssets(Context context, String fileName) {
+		List<Puzzle> puzzles = new ArrayList<>();
+
+		try {
+			InputStream inputStream = context.getAssets().open(fileName);
+			XmlPullParser parser = Xml.newPullParser();
+			parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true);
+			parser.setInput(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+
+			Puzzle currentPuzzle = null;
+			List<String> colors = null;
+			List<String> items = null;
+			List<Integer> subLengths = null;
+
+			boolean inColors = false;
+			boolean inItems = false;
+
+			int eventType = parser.getEventType();
+
+			while (eventType != XmlPullParser.END_DOCUMENT) {
+				String tagName = parser.getName();
+				String namespace = parser.getNamespace();
+
+				switch (eventType) {
+					case XmlPullParser.START_TAG:
+						if ("LevelInfo2".equals(tagName)) {
+							currentPuzzle = new Puzzle();
+							colors = new ArrayList<>();
+							items = new ArrayList<>();
+							subLengths = new ArrayList<>();
+						} else if ("Colors".equals(tagName)) {
+							inColors = true;
+						} else if ("Items".equals(tagName)) {
+							inItems = true;
+						} else if ("string".equals(tagName) &&
+								"http://schemas.microsoft.com/2003/10/Serialization/Arrays".equals(namespace)) {
+							String text = parser.nextText();
+							if (inColors) {
+								colors.add(text);
+							} else if (inItems) {
+								items.add(text);
+							}
+						} else if ("int".equals(tagName) &&
+								"http://schemas.microsoft.com/2003/10/Serialization/Arrays".equals(namespace)) {
+							subLengths.add(Integer.parseInt(parser.nextText()));
+						} else if (currentPuzzle != null) {
+							switch (tagName) {
+								case "About":
+									currentPuzzle.about = parser.nextText();
+									break;
+								case "AllowedCommands":
+									currentPuzzle.allowedCommands = Integer.parseInt(parser.nextText());
+									break;
+								case "CommentCount":
+									currentPuzzle.commentCount = Integer.parseInt(parser.nextText());
+									break;
+								case "DifficultyVoteSum":
+									currentPuzzle.difficulty = Integer.parseInt(parser.nextText());
+									break;
+								case "Disliked":
+									currentPuzzle.disliked = Integer.parseInt(parser.nextText());
+									break;
+								case "Featured":
+									currentPuzzle.featured = Boolean.parseBoolean(parser.nextText());
+									break;
+								case "Id":
+									currentPuzzle.id = Integer.parseInt(parser.nextText());
+									break;
+								case "Liked":
+									currentPuzzle.liked = Integer.parseInt(parser.nextText());
+									break;
+								case "RobotCol":
+									currentPuzzle.robotCol = Integer.parseInt(parser.nextText());
+									break;
+								case "RobotDir":
+									currentPuzzle.robotDir = Integer.parseInt(parser.nextText());
+									break;
+								case "RobotRow":
+									currentPuzzle.robotRow = Integer.parseInt(parser.nextText());
+									break;
+								case "Solutions":
+									currentPuzzle.solutions = Integer.parseInt(parser.nextText());
+									break;
+								case "SubmittedBy":
+									currentPuzzle.submittedBy = parser.nextText();
+									break;
+								case "SubmittedDate":
+									currentPuzzle.submittedDate = Timestamp.valueOf(parser.nextText().replace("T", " "));
+									break;
+								case "Title":
+									currentPuzzle.title = parser.nextText();
+									break;
+							}
+						}
+						break;
+
+					case XmlPullParser.END_TAG:
+						if ("LevelInfo2".equals(tagName) && currentPuzzle != null) {
+							// Finalize lists
+							currentPuzzle.setColors(String.join("", colors));
+							currentPuzzle.setItems(String.join("", items));
+
+							int[] lengths = new int[subLengths.size()];
+							for (int i = 0; i < subLengths.size(); i++) {
+								lengths[i] = subLengths.get(i);
+							}
+							currentPuzzle.setFunctionLengths(lengths);
+
+							puzzles.add(currentPuzzle);
+							currentPuzzle = null;
+						} else if ("Colors".equals(tagName)) {
+							inColors = false;
+						} else if ("Items".equals(tagName)) {
+							inItems = false;
+						}
+						break;
+				}
+
+				eventType = parser.next();
+			}
+
+		} catch (IOException | XmlPullParserException | NumberFormatException e) {
+			e.printStackTrace();
+		}
+
+		return puzzles;
+	}
+
+
 }
